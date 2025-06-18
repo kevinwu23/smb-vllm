@@ -103,9 +103,12 @@ class MultimodalQwen3Pipeline:
         Returns:
             Generated text(s)
         """
+        # Handle max_new_tokens vs max_length priority
+        if 'max_new_tokens' not in kwargs:
+            kwargs['max_new_tokens'] = max_length
+        
         return self.generate(
             inputs=inputs,
-            max_new_tokens=max_length,
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,

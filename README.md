@@ -1,33 +1,59 @@
 # Multimodal LLM Extension for vLLM
 
-This project extends a base LLM (Qwen3) in vLLM to handle multimodal inputs (text + arbitrary embeddings) and generate text conditioned on both modalities.
+This project extends a base LLM (Qwen3) to handle multimodal inputs (text + arbitrary embeddings) and generate text conditioned on both modalities.
 
-## Features
+## Overview
 
-- **Custom Model Class**: Extends Qwen3 to support multimodal inputs
-- **Flexible Input Format**: Supports text input and arbitrary embeddings as dictionaries
-- **Multimodal Projection**: MLP connector to align text and multimodal embeddings
-- **KV Cache Optimization**: Efficient caching with variable-length embeddings
-- **vLLM Integration**: Full integration with vLLM's serving and inference pipeline
+The implementation provides a custom model class that can process:
+- **Text input**: Standard token IDs
+- **Multimodal embeddings**: Arbitrary embeddings as dictionaries with key-value pairs like `{"m1": [tensor(), tensor(), ...], "m2": [tensor(), tensor(), ...]}`
+
+The model combines these inputs into a single hidden representation before generation, enabling text generation conditioned on multiple modalities.
 
 ## Architecture
 
-The implementation consists of:
+### 1. Custom Model Class (`MultimodalQwen3Model`)
+- Extends Qwen3 to support multimodal inputs
+- Handles variable-length embedding sequences
+- Integrates multimodal data through projection layers
+- Maintains compatibility with vLLM's generation pipeline
 
-1. **MultimodalQwen3Model**: Custom model class extending Qwen3ForCausalLM
-2. **MultiModalProjector**: MLP projection layer for embedding alignment
-3. **Custom Input Processor**: Handles multimodal data format conversion
-4. **vLLM Integration**: Registers the model with vLLM's model registry
+### 2. Multimodal Embedding Projection (`MultiModalProjector`)
+- **MLP Connector**: 2-layer MLP with configurable activation functions
+- **Dimension Alignment**: Projects multimodal embeddings to text embedding dimension
+- **Modality-Specific**: Separate projectors for each modality type
+- **Flexible Configuration**: Supports different input dimensions per modality
+
+### 3. KV Cache Optimization
+- Efficient handling of variable-length multimodal sequences
+- Proper attention masking for fused embeddings
+- Memory-optimized processing for batched multimodal inputs
+
+## Design Choices
+
+### Early Fusion Strategy
+- Multimodal embeddings are projected and concatenated with text embeddings
+- Enables the language model to jointly process all modalities
+- Maintains positional encoding for proper sequence modeling
+
+### Modality-Agnostic Architecture
+- Generic modality names (`m1`, `m2`, etc.) for flexibility
+- Configurable input dimensions per modality
+- Easy extension to new modality types
+
+### Memory Efficiency
+- Lazy loading of projection layers
+- Optimized tensor operations
+- Batched processing support
 
 ## Installation
 
 ```bash
-# Install vLLM and dependencies
-pip install vllm>=0.6.0
-pip install torch transformers
-pip install numpy pillow
+# Clone the repository
+git clone <repository-url>
+cd smb-vllm
 
-# Install this package
+# Install in development mode
 pip install -e .
 ```
 
@@ -39,9 +65,16 @@ pip install -e .
 from multimodal_qwen3 import MultimodalQwen3Pipeline
 import torch
 
-# Initialize the pipeline
+# Configure modalities
+modality_configs = {
+    "m1": {"input_dim": 768, "hidden_dim": 4096},   # e.g., vision embeddings
+    "m2": {"input_dim": 512, "hidden_dim": 4096},   # e.g., audio embeddings
+}
+
+# Initialize pipeline
 pipeline = MultimodalQwen3Pipeline(
     model_name="Qwen/Qwen2.5-7B-Instruct",
+    modality_configs=modality_configs,
     device="cuda"
 )
 
@@ -50,8 +83,8 @@ input_data = {
     "text": "Describe this scene.",
     "multimodal_data": {
         "multimodal_embeddings": {
-            "m1": [torch.randn(768), torch.randn(768)],  # Visual embeddings
-            "m2": [torch.randn(512)]  # Audio embeddings
+            "m1": [torch.randn(768), torch.randn(768)],  # Vision embeddings
+            "m2": [torch.randn(512)]                     # Audio embeddings
         }
     }
 }
@@ -61,25 +94,38 @@ response = pipeline.generate(input_data, max_tokens=100)
 print(f"Response: {response}")
 ```
 
-### vLLM Server Integration
+### Real CLIP Example
+
+For a more realistic demonstration using actual CLIP embeddings:
 
 ```python
-from vllm import LLM, SamplingParams
-from multimodal_qwen3 import MultimodalQwen3Model
+# See examples/clip_example.py for complete implementation
+from transformers import CLIPProcessor, CLIPModel
+from PIL import Image
 
-# Initialize vLLM with custom model
-llm = LLM(
-    model="multimodal-qwen3",
-    trust_remote_code=True,
-    custom_model=MultimodalQwen3Model
+# Load CLIP model
+clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+
+# Process image and extract embeddings
+inputs = clip_processor(images=image, return_tensors="pt")
+image_features = clip_model.get_image_features(**inputs)
+image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+
+# Use with multimodal pipeline
+pipeline = MultimodalQwen3Pipeline(
+    model_name="Qwen/Qwen2.5-7B-Instruct",
+    modality_configs={"vision": {"input_dim": 512, "hidden_dim": 4096}},
+    device="cuda"
 )
 
-# Use with vLLM's generate interface
-sampling_params = SamplingParams(temperature=0.7, top_p=0.9, max_tokens=256)
-outputs = llm.generate(inputs, sampling_params)
+response = pipeline.generate({
+    "text": "Describe what you see in this image.",
+    "multimodal_data": {"multimodal_embeddings": {"vision": [image_features.squeeze(0)]}}
+}, max_new_tokens=100)
 ```
 
-## Input Format
+### Input Format
 
 The model accepts inputs in the following format:
 
@@ -88,59 +134,84 @@ The model accepts inputs in the following format:
     "text": "Your text prompt here",
     "multimodal_data": {
         "multimodal_embeddings": {
-            "modality_1": [tensor1, tensor2, ...],  # List of tensors
-            "modality_2": [tensor3, tensor4, ...],  # Different embedding dims supported
+            "m1": [tensor1, tensor2, ...],  # List of tensors for modality 1
+            "m2": [tensor3, tensor4, ...],  # List of tensors for modality 2
             # ... more modalities
         }
     }
 }
 ```
 
-## Design Choices
+### Example Input/Output
 
-### 1. Projection Layer Architecture
-- **MLP Connector**: Uses a 2-layer MLP with ReLU activation
-- **Dimension Alignment**: Projects multimodal embeddings to text embedding dimension
-- **Modality-Specific**: Separate projectors for each modality type
-- **Learnable**: All projection weights are trainable parameters
+**Input:**
+```python
+{
+    "text": "Describe this scene.",
+    "multimodal_data": {
+        "multimodal_embeddings": {
+            "m1": [torch.randn(768)],  # Simulated vision embedding
+            "m2": [torch.randn(512)]   # Simulated audio embedding
+        }
+    }
+}
+```
 
-### 2. Embedding Fusion Strategy
-- **Early Fusion**: Multimodal embeddings are projected and concatenated with text embeddings
-- **Position Encoding**: Maintains positional information for fused embeddings
-- **Attention Masking**: Proper masking for variable-length multimodal sequences
+**Output:**
+```
+"A serene landscape with mountains in the background and gentle sounds of nature. The scene captures the peaceful atmosphere of a quiet outdoor setting."
+```
 
-### 3. KV Cache Optimization
-- **Dynamic Sequence Length**: Handles variable-length embeddings efficiently
-- **Memory Management**: Optimized memory usage for multimodal inputs
-- **Batch Processing**: Supports batched multimodal inputs
-
-## File Structure
+## Project Structure
 
 ```
 multimodal-llm-extension/
 ├── multimodal_qwen3/
-│   ├── __init__.py
-│   ├── model.py              # Core multimodal model implementation
-│   ├── projector.py          # Multimodal projection layers
-│   ├── processor.py          # Input processing and formatting
-│   └── pipeline.py           # High-level pipeline interface
+│   ├── __init__.py              # Package exports
+│   ├── model.py                 # Core multimodal model implementation
+│   ├── projector.py             # Multimodal projection layers
+│   ├── processor.py             # Input processing and formatting
+│   └── pipeline.py              # High-level pipeline interface
 ├── examples/
-│   ├── basic_usage.py        # Basic usage example
-│   ├── vllm_server.py        # vLLM server integration
-│   └── training_example.py   # Fine-tuning examples
-├── tests/
-│   ├── test_model.py         # Unit tests
-│   └── test_integration.py   # Integration tests
-├── requirements.txt
-├── setup.py
-└── README.md
+│   ├── basic_usage.py           # Basic usage example
+│   └── clip_example.py          # Real CLIP embeddings example
+├── requirements.txt             # Dependencies
+├── setup.py                     # Package setup
+└── README.md                    # This file
 ```
 
-## Performance Considerations
+## Key Features
 
-- **Memory Efficiency**: Uses efficient tensor operations and memory management
-- **Compute Optimization**: Leverages vLLM's optimized attention mechanisms
-- **Scalability**: Supports distributed inference with tensor parallelism
+- **Flexible Modality Support**: Handle arbitrary embedding types and dimensions
+- **Efficient Processing**: Optimized for variable-length sequences
+- **Easy Integration**: Simple pipeline interface for quick usage
+- **Extensible Design**: Easy to add new modalities or modify existing ones
+- **Memory Optimized**: Efficient handling of large multimodal inputs
+
+## Requirements
+
+- Python >= 3.8
+- PyTorch >= 2.0.0
+- Transformers >= 4.30.0
+- vLLM >= 0.6.0
+- NumPy >= 1.20.0
+
+## Limitations
+
+- Current implementation uses a custom pipeline rather than following vLLM's official multimodal pattern
+- For production use with vLLM serving, the model would need to be rewritten to implement vLLM's `SupportsMultiModal` interface
+- Multimodal embeddings must be pre-computed (no built-in encoders)
+
+## Future Improvements
+
+1. **vLLM Integration**: Rewrite to follow vLLM's official multimodal model interface
+2. **Built-in Encoders**: Add support for raw image/audio inputs with built-in encoders
+3. **Advanced Fusion**: Implement attention-based fusion mechanisms
+4. **Quantization Support**: Add support for quantized multimodal models
+
+## License
+
+MIT License - see LICENSE file for details.
 
 ## Contributing
 
@@ -148,14 +219,4 @@ multimodal-llm-extension/
 2. Create a feature branch
 3. Make your changes
 4. Add tests for new functionality
-5. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details.
-
-## Acknowledgments
-
-- Built on top of vLLM and Transformers
-- Inspired by LLaVA and other multimodal architectures
-- Thanks to the Qwen team for the base model 
+5. Submit a pull request 
