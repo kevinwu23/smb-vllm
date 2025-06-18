@@ -98,7 +98,7 @@ class MultimodalProcessor:
         processed_embeddings = {}
         
         for modality_name, embedding_list in embeddings.items():
-            # Ensure embeddings are tensors
+            # Ensure embeddings are tensors and properly formatted for batch processing
             processed_list = []
             
             if isinstance(embedding_list, list):
@@ -106,17 +106,23 @@ class MultimodalProcessor:
                     if isinstance(emb, torch.Tensor):
                         processed_list.append(emb.to(self.device))
                     else:
-                        processed_list.append(torch.tensor(emb, device=self.device))
+                        processed_list.append(torch.tensor(emb, device=self.device, dtype=torch.float32))
             else:
                 # Single embedding
                 if isinstance(embedding_list, torch.Tensor):
                     processed_list = [embedding_list.to(self.device)]
                 else:
-                    processed_list = [torch.tensor(embedding_list, device=self.device)]
+                    processed_list = [torch.tensor(embedding_list, device=self.device, dtype=torch.float32)]
             
             processed_embeddings[modality_name] = processed_list
         
-        return {"multimodal_embeddings": processed_embeddings}
+        # Convert to batch format (wrap in list for single item)
+        batch_formatted_embeddings = {}
+        for modality_name, embedding_list in processed_embeddings.items():
+            # For single input processing, wrap the embedding list in another list to create batch dimension
+            batch_formatted_embeddings[modality_name] = [embedding_list]
+        
+        return {"multimodal_embeddings": batch_formatted_embeddings}
     
     def create_multimodal_input(
         self,

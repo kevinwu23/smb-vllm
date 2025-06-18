@@ -118,6 +118,7 @@ class MultimodalQwen3Pipeline:
         self,
         inputs: Union[str, Dict[str, Any], List[Dict[str, Any]]],
         max_new_tokens: int = 256,
+        max_tokens: Optional[int] = None,
         **kwargs
     ) -> Union[str, List[str]]:
         """
@@ -126,11 +127,15 @@ class MultimodalQwen3Pipeline:
         Args:
             inputs: Input data
             max_new_tokens: Maximum new tokens to generate
+            max_tokens: Alias for max_new_tokens (for compatibility)
             **kwargs: Additional generation arguments
             
         Returns:
             Generated text(s)
         """
+        # Handle both max_tokens and max_new_tokens for compatibility
+        if max_tokens is not None:
+            max_new_tokens = max_tokens
         # Handle different input formats
         if isinstance(inputs, str):
             # Simple text input

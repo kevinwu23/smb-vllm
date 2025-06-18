@@ -111,7 +111,24 @@ class MultiModalProjector(nn.Module):
         batch_modality_offsets = []
         
         # Process each item in the batch
-        for batch_idx in range(len(list(multimodal_embeddings.values())[0])):
+        if not multimodal_embeddings:
+            return {
+                "projected_embeddings": torch.empty(0, 0, self.text_hidden_size, device=device),
+                "attention_mask": torch.empty(0, 0, device=device) if return_attention_mask else None,
+                "modality_offsets": [],
+            }
+        
+        # Get batch size from the first modality
+        first_modality_embeddings = list(multimodal_embeddings.values())[0]
+        if not first_modality_embeddings:
+            return {
+                "projected_embeddings": torch.empty(0, 0, self.text_hidden_size, device=device),
+                "attention_mask": torch.empty(0, 0, device=device) if return_attention_mask else None,
+                "modality_offsets": [],
+            }
+        
+        batch_size = len(first_modality_embeddings)
+        for batch_idx in range(batch_size):
             projected_embeddings = []
             attention_mask = []
             modality_offsets = {}

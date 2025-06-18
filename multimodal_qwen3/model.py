@@ -213,7 +213,7 @@ class MultimodalQwen3Model(PreTrainedModel):
         projected_embeddings = projected_data["projected_embeddings"]  # [batch_size, mm_seq_len, hidden_size]
         multimodal_attention_mask = projected_data["attention_mask"]   # [batch_size, mm_seq_len]
         
-        if projected_embeddings.numel() == 0:
+        if projected_embeddings.numel() == 0 or projected_embeddings.shape[1] == 0:
             # No multimodal embeddings to merge
             return inputs_embeds, attention_mask
         
@@ -392,12 +392,32 @@ class MultimodalQwen3Model(PreTrainedModel):
         
         # Generate
         with torch.no_grad():
-            outputs = super().generate(
-                input_ids=processed_inputs["input_ids"],
-                attention_mask=processed_inputs["attention_mask"],
-                multimodal_embeddings=processed_inputs.get("multimodal_embeddings"),
-                **generation_kwargs
-            )
+            # First forward pass to process multimodal embeddings
+            if processed_inputs.get("multimodal_embeddings"):
+                # Get input embeddings and merge with multimodal data
+                input_ids = processed_inputs["input_ids"]
+                inputs_embeds = self.get_input_embeddings()(input_ids)
+                
+                inputs_embeds, attention_mask = self._merge_multimodal_embeddings(
+                    input_ids, 
+                    inputs_embeds, 
+                    processed_inputs["multimodal_embeddings"], 
+                    processed_inputs["attention_mask"]
+                )
+                
+                # Generate using the language model with merged embeddings
+                outputs = self.language_model.generate(
+                    inputs_embeds=inputs_embeds,
+                    attention_mask=attention_mask,
+                    **generation_kwargs
+                )
+            else:
+                # No multimodal data, use standard generation
+                outputs = self.language_model.generate(
+                    input_ids=processed_inputs["input_ids"],
+                    attention_mask=processed_inputs["attention_mask"],
+                    **generation_kwargs
+                )
         
         return outputs
     
