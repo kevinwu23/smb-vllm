@@ -2,16 +2,17 @@
 """
 vLLM Server Integration Example
 
-This script demonstrates how to integrate the multimodal Qwen3 model with vLLM
-for high-performance serving and inference.
+This script demonstrates how to integrate the multimodal Qwen3 model with vLLM.
+Note: This uses our custom pipeline rather than direct vLLM integration since our
+current implementation doesn't follow vLLM's official multimodal pattern.
 """
 
 import torch
 import asyncio
 import json
 import logging
-from typing import Dict, List, Any
-from multimodal_qwen3 import MultimodalQwen3Model, MultimodalQwen3Config, create_example_config
+from typing import Dict, List, Any, Optional
+from multimodal_qwen3 import MultimodalQwen3Pipeline, create_example_config
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -20,92 +21,68 @@ logger = logging.getLogger(__name__)
 
 class MultimodalVLLMServer:
     """
-    vLLM server wrapper for multimodal Qwen3 model.
+    Server wrapper for multimodal Qwen3 model that can work with or without vLLM.
+    
+    IMPORTANT: Our current MultimodalQwen3Model doesn't follow vLLM's official 
+    multimodal integration pattern, so we use our pipeline instead.
     """
     
     def __init__(
         self,
         model_name: str = "Qwen/Qwen2.5-7B-Instruct",
         modality_configs: Dict[str, Dict[str, int]] = None,
-        tensor_parallel_size: int = 1,
-        gpu_memory_utilization: float = 0.9,
-        max_model_len: int = 4096,
+        use_vllm_fallback: bool = True,
+        **kwargs
     ):
         """
-        Initialize the vLLM server.
+        Initialize the server.
         
         Args:
             model_name: Base model name
             modality_configs: Modality configurations
-            tensor_parallel_size: Number of GPUs for tensor parallelism
-            gpu_memory_utilization: GPU memory utilization ratio
-            max_model_len: Maximum model sequence length
+            use_vllm_fallback: Whether to use vLLM for text-only generation
+            **kwargs: Additional arguments for pipeline
         """
         self.model_name = model_name
         self.modality_configs = modality_configs or create_example_config()
+        self.use_vllm_fallback = use_vllm_fallback
         
-        # Initialize model configuration
-        self.config = MultimodalQwen3Config(
-            base_model_name=model_name,
+        # Initialize our multimodal pipeline
+        logger.info("Initializing multimodal pipeline...")
+        self.pipeline = MultimodalQwen3Pipeline(
+            model_name=model_name,
             modality_configs=self.modality_configs,
+            **kwargs
         )
         
-        # Initialize vLLM engine
-        self._init_vllm_engine(
-            tensor_parallel_size=tensor_parallel_size,
-            gpu_memory_utilization=gpu_memory_utilization,
-            max_model_len=max_model_len,
-        )
+        # Try to initialize vLLM for text-only fallback
+        self.vllm_engine = None
+        self.SamplingParams = None
         
-        logger.info(f"vLLM server initialized with {len(self.modality_configs)} modalities")
+        if use_vllm_fallback:
+            self._init_vllm_fallback()
+        
+        logger.info(f"Server initialized with {len(self.modality_configs)} modalities")
     
-    def _init_vllm_engine(
-        self,
-        tensor_parallel_size: int,
-        gpu_memory_utilization: float,
-        max_model_len: int,
-    ):
-        """Initialize vLLM engine with multimodal model."""
+    def _init_vllm_fallback(self):
+        """Initialize vLLM for text-only generation as fallback."""
         try:
             from vllm import LLM, SamplingParams
-            from vllm.engine.arg_utils import AsyncEngineArgs
-            from vllm.engine.async_llm_engine import AsyncLLMEngine
             
-            # Create engine arguments
-            engine_args = AsyncEngineArgs(
+            # Initialize vLLM WITHOUT custom_model parameter (which doesn't exist)
+            self.vllm_engine = LLM(
                 model=self.model_name,
-                tensor_parallel_size=tensor_parallel_size,
-                gpu_memory_utilization=gpu_memory_utilization,
-                max_model_len=max_model_len,
                 trust_remote_code=True,
-                enforce_eager=True,  # For custom models
+                # Remove any invalid parameters like custom_model
             )
             
-            # Initialize async engine
-            self.engine = AsyncLLMEngine.from_engine_args(engine_args)
-            
-            # Store sampling params class
             self.SamplingParams = SamplingParams
-            
-            logger.info("vLLM engine initialized successfully")
+            logger.info("vLLM fallback engine initialized for text-only generation")
             
         except ImportError:
-            logger.error("vLLM not available. Installing fallback implementation.")
-            self._init_fallback_engine()
-    
-    def _init_fallback_engine(self):
-        """Initialize fallback engine when vLLM is not available."""
-        # Create multimodal model directly
-        self.model = MultimodalQwen3Model(self.config)
-        self.engine = None
-        
-        # Mock sampling params
-        class MockSamplingParams:
-            def __init__(self, **kwargs):
-                self.__dict__.update(kwargs)
-        
-        self.SamplingParams = MockSamplingParams
-        logger.info("Fallback engine initialized")
+            logger.warning("vLLM not available. Using pipeline for all generation.")
+        except Exception as e:
+            logger.warning(f"vLLM initialization failed: {e}. Using pipeline for all generation.")
     
     async def generate_async(
         self,
@@ -116,7 +93,7 @@ class MultimodalVLLMServer:
         Generate response asynchronously.
         
         Args:
-            inputs: Input dictionary with text and multimodal data
+            inputs: Input dictionary with text and optional multimodal data
             sampling_params: Sampling parameters
             
         Returns:
@@ -129,39 +106,89 @@ class MultimodalVLLMServer:
                 "max_tokens": 256,
             }
         
-        if self.engine is not None:
-            # Use vLLM engine
+        # Check if this is a multimodal request
+        has_multimodal = (
+            "multimodal_data" in inputs and 
+            "multimodal_embeddings" in inputs["multimodal_data"] and
+            inputs["multimodal_data"]["multimodal_embeddings"]
+        )
+        
+        if has_multimodal:
+            # Use our multimodal pipeline for multimodal inputs
+            return await self._generate_with_pipeline(inputs, sampling_params)
+        elif self.vllm_engine is not None:
+            # Use vLLM for text-only inputs (faster)
             return await self._generate_with_vllm(inputs, sampling_params)
         else:
-            # Use fallback model
-            return await self._generate_with_fallback(inputs, sampling_params)
+            # Use pipeline as fallback
+            return await self._generate_with_pipeline(inputs, sampling_params)
+    
+    async def _generate_with_pipeline(
+        self,
+        inputs: Dict[str, Any],
+        sampling_params: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Generate using our multimodal pipeline."""
+        try:
+            # Run in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            
+            def _generate():
+                with torch.no_grad():
+                    return self.pipeline.generate(
+                        inputs=inputs,
+                        max_new_tokens=sampling_params.get("max_tokens", 256),
+                        temperature=sampling_params.get("temperature", 0.7),
+                        top_p=sampling_params.get("top_p", 0.9),
+                        do_sample=True,
+                    )
+            
+            # Run generation in executor
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                text = await loop.run_in_executor(executor, _generate)
+            
+            return {
+                "text": text,
+                "finish_reason": "stop",
+                "usage": {
+                    "prompt_tokens": 0,  # Would need to calculate
+                    "completion_tokens": len(self.pipeline.model.tokenizer.encode(text)) if text else 0,
+                }
+            }
+                
+        except Exception as e:
+            logger.error(f"Pipeline generation error: {e}")
+            return {"text": "", "finish_reason": "error", "error": str(e)}
     
     async def _generate_with_vllm(
         self,
         inputs: Dict[str, Any],
         sampling_params: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Generate using vLLM engine."""
+        """Generate using vLLM for text-only inputs."""
         try:
             # Create sampling params
-            vllm_sampling_params = self.SamplingParams(**sampling_params)
+            vllm_sampling_params = self.SamplingParams(
+                temperature=sampling_params.get("temperature", 0.7),
+                top_p=sampling_params.get("top_p", 0.9),
+                max_tokens=sampling_params.get("max_tokens", 256),
+            )
             
-            # For now, we'll process multimodal inputs by converting them to text
-            # In a full implementation, this would integrate with vLLM's multimodal handling
-            text_input = self._convert_multimodal_to_text(inputs)
+            # Extract text input
+            text_input = inputs.get("text", "")
             
             # Generate with vLLM
-            results = await self.engine.generate(text_input, vllm_sampling_params)
+            outputs = self.vllm_engine.generate([text_input], vllm_sampling_params)
             
-            # Process results
-            if results:
-                output = results[0].outputs[0].text
+            if outputs:
+                output = outputs[0].outputs[0].text
                 return {
                     "text": output,
-                    "finish_reason": results[0].outputs[0].finish_reason,
+                    "finish_reason": outputs[0].outputs[0].finish_reason or "stop",
                     "usage": {
-                        "prompt_tokens": len(results[0].prompt_token_ids),
-                        "completion_tokens": len(results[0].outputs[0].token_ids),
+                        "prompt_tokens": len(outputs[0].prompt_token_ids),
+                        "completion_tokens": len(outputs[0].outputs[0].token_ids),
                     }
                 }
             else:
@@ -171,80 +198,12 @@ class MultimodalVLLMServer:
             logger.error(f"vLLM generation error: {e}")
             return {"text": "", "finish_reason": "error", "error": str(e)}
     
-    async def _generate_with_fallback(
-        self,
-        inputs: Dict[str, Any],
-        sampling_params: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Generate using fallback model."""
-        try:
-            # Use the multimodal model directly
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    inputs=inputs,
-                    max_new_tokens=sampling_params.get("max_tokens", 256),
-                    temperature=sampling_params.get("temperature", 0.7),
-                    top_p=sampling_params.get("top_p", 0.9),
-                    do_sample=True,
-                )
-            
-            # Decode output
-            if isinstance(outputs, torch.Tensor):
-                text = self.model.tokenizer.decode(outputs[0], skip_special_tokens=True)
-                # Remove input text
-                if "text" in inputs:
-                    input_text = inputs["text"]
-                    if text.startswith(input_text):
-                        text = text[len(input_text):].strip()
-                
-                return {
-                    "text": text,
-                    "finish_reason": "stop",
-                    "usage": {
-                        "prompt_tokens": 0,  # Would need to calculate
-                        "completion_tokens": len(self.model.tokenizer.encode(text)),
-                    }
-                }
-            else:
-                return {"text": str(outputs), "finish_reason": "stop"}
-                
-        except Exception as e:
-            logger.error(f"Fallback generation error: {e}")
-            return {"text": "", "finish_reason": "error", "error": str(e)}
-    
-    def _convert_multimodal_to_text(self, inputs: Dict[str, Any]) -> str:
-        """
-        Convert multimodal inputs to text representation.
-        
-        This is a simplified approach for demonstration.
-        In practice, you'd want to integrate multimodal embeddings properly.
-        """
-        text = inputs.get("text", "")
-        
-        if "multimodal_data" in inputs:
-            multimodal_data = inputs["multimodal_data"]
-            if "multimodal_embeddings" in multimodal_data:
-                modalities = list(multimodal_data["multimodal_embeddings"].keys())
-                if modalities:
-                    text += f" [Multimodal content includes: {', '.join(modalities)}]"
-        
-        return text
-    
     def generate_sync(
         self,
         inputs: Dict[str, Any],
         sampling_params: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
-        """
-        Synchronous wrapper for generation.
-        
-        Args:
-            inputs: Input dictionary
-            sampling_params: Sampling parameters
-            
-        Returns:
-            Generated response
-        """
+        """Synchronous wrapper for generation."""
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(self.generate_async(inputs, sampling_params))
 
@@ -253,20 +212,13 @@ def create_openai_compatible_response(
     result: Dict[str, Any],
     model: str = "multimodal-qwen3",
 ) -> Dict[str, Any]:
-    """
-    Create OpenAI-compatible response format.
+    """Create OpenAI-compatible response format."""
+    import time
     
-    Args:
-        result: Generation result
-        model: Model name
-        
-    Returns:
-        OpenAI-compatible response
-    """
     return {
-        "id": "chatcmpl-multimodal",
+        "id": f"chatcmpl-{int(time.time())}",
         "object": "chat.completion",
-        "created": int(asyncio.get_event_loop().time()),
+        "created": int(time.time()),
         "model": model,
         "choices": [
             {
@@ -282,20 +234,67 @@ def create_openai_compatible_response(
     }
 
 
+# CORRECTED EXAMPLE: How to properly use our model with vLLM
+def correct_usage_example():
+    """
+    Shows the CORRECT way to use our multimodal model.
+    
+    DO NOT use:
+        llm = LLM(custom_model=MultimodalQwen3Model)  # custom_model doesn't exist!
+    
+    Instead, use our server wrapper or pipeline directly.
+    """
+    
+    # Method 1: Use our server wrapper (recommended)
+    server = MultimodalVLLMServer(
+        model_name="Qwen/Qwen2.5-0.5B-Instruct",  # Use smaller model for testing
+        use_vllm_fallback=True,
+    )
+    
+    # Method 2: Use our pipeline directly
+    from multimodal_qwen3 import MultimodalQwen3Pipeline
+    
+    pipeline = MultimodalQwen3Pipeline(
+        model_name="Qwen/Qwen2.5-0.5B-Instruct",
+        modality_configs={
+            "vision": {"input_dim": 768, "hidden_dim": 4096},
+            "audio": {"input_dim": 512, "hidden_dim": 4096},
+        }
+    )
+    
+    # Example usage
+    inputs = {
+        "text": "Describe this scene.",
+        "multimodal_data": {
+            "multimodal_embeddings": {
+                "vision": [torch.randn(768)],
+                "audio": [torch.randn(512)],
+            }
+        }
+    }
+    
+    # Generate with server
+    result = server.generate_sync(inputs, {"max_tokens": 100})
+    print(f"Server result: {result['text']}")
+    
+    # Generate with pipeline
+    response = pipeline.generate(inputs, max_tokens=100)
+    print(f"Pipeline result: {response}")
+
+
 async def main():
     """Main example function."""
     logger.info("Starting vLLM server integration example")
     
     # Initialize server
     server = MultimodalVLLMServer(
-        model_name="Qwen/Qwen2.5-7B-Instruct",
-        tensor_parallel_size=1,
-        gpu_memory_utilization=0.8,
-        max_model_len=2048,
+        model_name="Qwen/Qwen2.5-0.5B-Instruct",  # Use smaller model
+        use_vllm_fallback=True,
     )
     
     # Example inputs
     test_inputs = [
+        # Multimodal input
         {
             "text": "Describe this image.",
             "multimodal_data": {
@@ -304,28 +303,24 @@ async def main():
                 }
             }
         },
+        # Text-only input (can use vLLM fallback)
         {
-            "text": "What do you hear in this audio?",
-            "multimodal_data": {
-                "multimodal_embeddings": {
-                    "audio": [torch.randn(512), torch.randn(512)],
-                }
-            }
+            "text": "What is the capital of France?",
         },
+        # Complex multimodal input
         {
             "text": "Analyze this multimodal content.",
             "multimodal_data": {
                 "multimodal_embeddings": {
                     "vision": [torch.randn(768)],
                     "audio": [torch.randn(512)],
-                    "code": [torch.randn(768)],
                 }
             }
         }
     ]
     
     # Test generation
-    logger.info("\n=== Testing Multimodal Generation ===")
+    logger.info("\n=== Testing Generation ===")
     
     for i, test_input in enumerate(test_inputs):
         logger.info(f"\nTest {i+1}:")
@@ -334,6 +329,8 @@ async def main():
         if "multimodal_data" in test_input:
             modalities = list(test_input["multimodal_data"]["multimodal_embeddings"].keys())
             print(f"Modalities: {modalities}")
+        else:
+            print("Text-only input")
         
         # Generate response
         result = await server.generate_async(
@@ -341,7 +338,7 @@ async def main():
             sampling_params={
                 "temperature": 0.7,
                 "top_p": 0.9,
-                "max_tokens": 150,
+                "max_tokens": 100,
             }
         )
         
@@ -350,35 +347,21 @@ async def main():
         
         # Create OpenAI-compatible response
         openai_response = create_openai_compatible_response(result)
-        print(f"OpenAI format: {json.dumps(openai_response, indent=2)}")
+        print(f"OpenAI format available")
     
-    # Benchmark performance
-    logger.info("\n=== Performance Benchmark ===")
-    
-    import time
-    num_requests = 5
-    total_time = 0
-    
-    for i in range(num_requests):
-        start_time = time.time()
-        
-        result = await server.generate_async(
-            inputs=test_inputs[0],
-            sampling_params={"temperature": 0.7, "max_tokens": 50}
-        )
-        
-        end_time = time.time()
-        request_time = end_time - start_time
-        total_time += request_time
-        
-        logger.info(f"Request {i+1}: {request_time:.2f}s")
-    
-    avg_latency = total_time / num_requests
-    logger.info(f"Average latency: {avg_latency:.2f}s")
-    logger.info(f"Throughput: {1/avg_latency:.2f} requests/second")
-    
-    logger.info("vLLM server integration example completed!")
+    logger.info("Example completed!")
 
 
 if __name__ == "__main__":
+    print("=== IMPORTANT NOTE ===")
+    print("This example shows how to use our multimodal model correctly.")
+    print("Our current implementation does NOT follow vLLM's official multimodal pattern.")
+    print("For true vLLM integration, the model would need to be rewritten to follow")
+    print("vLLM's multimodal model interface (SupportsMultiModal, etc.)")
+    print("======================\n")
+    
+    # Show correct usage
+    print("For immediate usage, call correct_usage_example() or run main()")
+    
+    # Run async main
     asyncio.run(main()) 
