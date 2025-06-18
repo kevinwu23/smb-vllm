@@ -38,15 +38,15 @@ def main():
     print(f"Input: {simple_text}")
     print(f"Response: {response}")
     
-    # Example 2: Multimodal input with vision embeddings
-    logger.info("\n=== Example 2: Multimodal Input (Vision) ===")
+    # Example 2: Multimodal input with m1 embeddings
+    logger.info("\n=== Example 2: Multimodal Input (m1 - e.g., Vision) ===")
     multimodal_input = {
         "text": "Describe this scene.",
         "multimodal_data": {
             "multimodal_embeddings": {
-                "vision": [
-                    torch.randn(768),  # Simulated CLIP embedding 1
-                    torch.randn(768),  # Simulated CLIP embedding 2
+                "m1": [
+                    torch.randn(768),  # Simulated visual embedding 1
+                    torch.randn(768),  # Simulated visual embedding 2
                 ]
             }
         }
@@ -54,7 +54,7 @@ def main():
     
     response = pipeline(multimodal_input, max_new_tokens=150, temperature=0.7)
     print(f"Input: {multimodal_input['text']}")
-    print(f"Vision embeddings: {len(multimodal_input['multimodal_data']['multimodal_embeddings']['vision'])} embeddings")
+    print(f"m1 embeddings: {len(multimodal_input['multimodal_data']['multimodal_embeddings']['m1'])} embeddings")
     print(f"Response: {response}")
     
     # Example 3: Multiple modalities
@@ -63,8 +63,8 @@ def main():
         "text": "Analyze the visual scene and audio content.",
         "multimodal_data": {
             "multimodal_embeddings": {
-                "vision": [torch.randn(768)],  # Visual embedding
-                "audio": [torch.randn(512), torch.randn(512)],  # Audio embeddings
+                "m1": [torch.randn(768)],  # Visual embedding
+                "m2": [torch.randn(512), torch.randn(512)],  # Audio embeddings
             }
         }
     }
@@ -82,8 +82,8 @@ def main():
             "content": "I have an image and some audio. Can you help me understand them?",
             "multimodal_data": {
                 "multimodal_embeddings": {
-                    "vision": [torch.randn(768)],
-                    "audio": [torch.randn(512)],
+                    "m1": [torch.randn(768)],
+                    "m2": [torch.randn(512)],
                 }
             }
         }
@@ -97,15 +97,15 @@ def main():
     logger.info("\n=== Example 5: Dynamic Modality Addition ===")
     
     # Add a new modality for text embeddings
-    pipeline.add_modality("text_embedding", input_dim=384, hidden_dim=4096)
+    pipeline.add_modality("m5", input_dim=384, hidden_dim=4096)
     
     # Use the new modality
     new_modal_input = {
-        "text": "Process this text embedding along with vision.",
+        "text": "Process this text embedding along with visual content.",
         "multimodal_data": {
             "multimodal_embeddings": {
-                "vision": [torch.randn(768)],
-                "text_embedding": [torch.randn(384)],  # New modality
+                "m1": [torch.randn(768)],
+                "m5": [torch.randn(384)],  # New modality
             }
         }
     }

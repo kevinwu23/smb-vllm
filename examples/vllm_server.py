@@ -257,8 +257,8 @@ def correct_usage_example():
     pipeline = MultimodalQwen3Pipeline(
         model_name="Qwen/Qwen2.5-0.5B-Instruct",
         modality_configs={
-            "vision": {"input_dim": 768, "hidden_dim": 4096},
-            "audio": {"input_dim": 512, "hidden_dim": 4096},
+            "m1": {"input_dim": 768, "hidden_dim": 4096},  # Generic modality 1 (e.g., vision)
+            "m2": {"input_dim": 512, "hidden_dim": 4096},  # Generic modality 2 (e.g., audio)
         }
     )
     
@@ -267,8 +267,8 @@ def correct_usage_example():
         "text": "Describe this scene.",
         "multimodal_data": {
             "multimodal_embeddings": {
-                "vision": [torch.randn(768)],
-                "audio": [torch.randn(512)],
+                "m1": [torch.randn(768)],  # Generic modality 1
+                "m2": [torch.randn(512)],  # Generic modality 2
             }
         }
     }
@@ -299,7 +299,7 @@ async def main():
             "text": "Describe this image.",
             "multimodal_data": {
                 "multimodal_embeddings": {
-                    "vision": [torch.randn(768)],
+                    "m1": [torch.randn(768)],  # Generic modality 1 (e.g., vision)
                 }
             }
         },
@@ -312,8 +312,8 @@ async def main():
             "text": "Analyze this multimodal content.",
             "multimodal_data": {
                 "multimodal_embeddings": {
-                    "vision": [torch.randn(768)],
-                    "audio": [torch.randn(512)],
+                    "m1": [torch.randn(768)],  # Generic modality 1 (e.g., vision)
+                    "m2": [torch.randn(512)],  # Generic modality 2 (e.g., audio)
                 }
             }
         }

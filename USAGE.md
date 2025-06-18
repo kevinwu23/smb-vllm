@@ -12,8 +12,8 @@ from multimodal_qwen3 import MultimodalQwen3Pipeline
 pipeline = MultimodalQwen3Pipeline(
     model_name="Qwen/Qwen2.5-0.5B-Instruct",
     modality_configs={
-        "vision": {"input_dim": 768, "hidden_dim": 4096},
-        "audio": {"input_dim": 512, "hidden_dim": 4096},
+        "m1": {"input_dim": 768, "hidden_dim": 4096},   # Generic modality 1 (e.g., vision)
+        "m2": {"input_dim": 512, "hidden_dim": 4096},   # Generic modality 2 (e.g., audio)
     }
 )
 
@@ -22,8 +22,8 @@ input_data = {
     "text": "Describe this scene.",
     "multimodal_data": {
         "multimodal_embeddings": {
-            "vision": [torch.randn(768), torch.randn(768)],
-            "audio": [torch.randn(512)]
+            "m1": [torch.randn(768), torch.randn(768)],  # Generic modality 1
+            "m2": [torch.randn(512)]                     # Generic modality 2
         }
     }
 }
@@ -74,12 +74,24 @@ Our current implementation doesn't follow vLLM's official multimodal pattern. In
 ```python
 # Option 1: Use our pipeline directly
 from multimodal_qwen3 import MultimodalQwen3Pipeline
-pipeline = MultimodalQwen3Pipeline(model_name="Qwen/Qwen2.5-0.5B-Instruct")
+pipeline = MultimodalQwen3Pipeline(
+    model_name="Qwen/Qwen2.5-0.5B-Instruct",
+    modality_configs={
+        "m1": {"input_dim": 768, "hidden_dim": 4096},
+        "m2": {"input_dim": 512, "hidden_dim": 4096},
+    }
+)
 response = pipeline.generate(input_data)
 
 # Option 2: Use our server wrapper (which can use vLLM for text-only)
 from examples.vllm_server import MultimodalVLLMServer
-server = MultimodalVLLMServer(model_name="Qwen/Qwen2.5-0.5B-Instruct")
+server = MultimodalVLLMServer(
+    model_name="Qwen/Qwen2.5-0.5B-Instruct",
+    modality_configs={
+        "m1": {"input_dim": 768, "hidden_dim": 4096},
+        "m2": {"input_dim": 512, "hidden_dim": 4096},
+    }
+)
 result = server.generate_sync(input_data)
 ```
 
@@ -92,8 +104,9 @@ The expected input format is:
     "text": "Your text prompt here",
     "multimodal_data": {
         "multimodal_embeddings": {
-            "modality1": [tensor1, tensor2, ...],  # List of tensors
-            "modality2": [tensor3, tensor4, ...],  # Each modality can have multiple embeddings
+            "m1": [tensor1, tensor2, ...],  # Generic modality 1 (list of tensors)
+            "m2": [tensor3, tensor4, ...],  # Generic modality 2 (each modality can have multiple embeddings)
+            "m3": [tensor5],                # Generic modality 3 (single tensor in list)
         }
     }
 }

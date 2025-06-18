@@ -108,7 +108,7 @@ def demo_vision_language():
             "text": test_case["query"],
             "multimodal_data": {
                 "multimodal_embeddings": {
-                    "vision": test_case["embeddings"]
+                    "m1": test_case["embeddings"]  # Generic modality 1 (vision)
                 }
             }
         }
@@ -162,7 +162,7 @@ def demo_audio_analysis():
             "text": test_case["query"],
             "multimodal_data": {
                 "multimodal_embeddings": {
-                    "audio": test_case["embeddings"]
+                    "m2": test_case["embeddings"]  # Generic modality 2 (audio)
                 }
             }
         }
@@ -243,7 +243,7 @@ class LinkedList:
             "text": test_case["query"],
             "multimodal_data": {
                 "multimodal_embeddings": {
-                    "code": test_case["embeddings"]
+                    "m4": test_case["embeddings"]  # Generic modality 4 (code)
                 }
             }
         }
@@ -310,11 +310,11 @@ def demo_multimodal_fusion():
         
         embeddings = {}
         if test_case.get("use_all_modalities") or test_case.get("use_vision_audio"):
-            embeddings["vision"] = vision_embeddings
-            embeddings["audio"] = audio_embeddings
+            embeddings["m1"] = vision_embeddings  # Generic modality 1 (vision)
+            embeddings["m2"] = audio_embeddings   # Generic modality 2 (audio)
         
         if test_case.get("use_all_modalities"):
-            embeddings["code"] = code_embeddings
+            embeddings["m4"] = code_embeddings    # Generic modality 4 (code)
         
         multimodal_input = {
             "text": test_case["query"],
@@ -352,8 +352,8 @@ def demo_conversational_multimodal():
             "content": "I'm sharing some images and sounds from my hiking trip. Can you help me understand what I experienced?",
             "multimodal_data": {
                 "multimodal_embeddings": {
-                    "vision": simulate_clip_embeddings(["mountain trail with pine trees and a clear sky"]),
-                    "audio": simulate_audio_embeddings(["wind through trees and distant bird calls"])
+                    "m1": simulate_clip_embeddings(["mountain trail with pine trees and a clear sky"]),
+                    "m2": simulate_audio_embeddings(["wind through trees and distant bird calls"])
                 }
             }
         }
@@ -371,8 +371,8 @@ def demo_conversational_multimodal():
         "content": "That's interesting! I also recorded this other scene. How does it compare?",
         "multimodal_data": {
             "multimodal_embeddings": {
-                "vision": simulate_clip_embeddings(["a rushing waterfall with mist and rocks"]),
-                "audio": simulate_audio_embeddings(["loud water rushing and echoing off rocks"])
+                "m1": simulate_clip_embeddings(["a rushing waterfall with mist and rocks"]),
+                "m2": simulate_audio_embeddings(["loud water rushing and echoing off rocks"])
             }
         }
     })
@@ -399,8 +399,8 @@ def demo_performance_benchmark():
             "text": f"Analyze this multimodal content #{i+1}.",
             "multimodal_data": {
                 "multimodal_embeddings": {
-                    "vision": [torch.randn(768)],
-                    "audio": [torch.randn(512)],
+                    "m1": [torch.randn(768)],  # Generic modality 1 (vision)
+                    "m2": [torch.randn(512)],  # Generic modality 2 (audio)
                 }
             }
         })

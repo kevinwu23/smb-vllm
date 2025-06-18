@@ -54,9 +54,9 @@ class MultimodalQwen3Pipeline:
         # Set default modality configs if none provided
         if modality_configs is None:
             modality_configs = {
-                "vision": {"input_dim": 768, "hidden_dim": 4096},
-                "audio": {"input_dim": 512, "hidden_dim": 4096},
-                "generic": {"input_dim": 1024, "hidden_dim": 4096},
+                "m1": {"input_dim": 768, "hidden_dim": 4096},   # Generic modality 1 (e.g., vision)
+                "m2": {"input_dim": 512, "hidden_dim": 4096},   # Generic modality 2 (e.g., audio)
+                "m3": {"input_dim": 1024, "hidden_dim": 4096},  # Generic modality 3 (e.g., embeddings)
             }
         
         # Create model configuration
@@ -403,33 +403,33 @@ class MultimodalQwen3Pipeline:
 
 def create_example_config() -> Dict[str, Dict[str, int]]:
     """
-    Create example modality configurations.
+    Create example modality configurations with generic naming.
     
     Returns:
         Example modality configurations
     """
     return {
-        # Visual modality (e.g., CLIP embeddings)
-        "vision": {
-            "input_dim": 768,  # CLIP ViT-B/32 dimension
+        # Generic modality 1 (e.g., visual/CLIP embeddings)
+        "m1": {
+            "input_dim": 768,  # CLIP ViT-B/32 or similar dimension
             "hidden_dim": 4096,
         },
         
-        # Audio modality (e.g., Wav2Vec2 embeddings)
-        "audio": {
+        # Generic modality 2 (e.g., audio/Wav2Vec2 embeddings)
+        "m2": {
             "input_dim": 512,  # Common audio embedding dimension
             "hidden_dim": 4096,
         },
         
-        # Generic embedding modality
-        "embedding": {
+        # Generic modality 3 (e.g., text embeddings)
+        "m3": {
             "input_dim": 1024,  # Generic embedding dimension
             "hidden_dim": 4096,
         },
         
-        # Code embeddings (e.g., CodeBERT)
-        "code": {
-            "input_dim": 768,  # CodeBERT dimension
+        # Generic modality 4 (e.g., code embeddings)
+        "m4": {
+            "input_dim": 768,  # CodeBERT or similar dimension
             "hidden_dim": 4096,
         },
     }
@@ -437,7 +437,7 @@ def create_example_config() -> Dict[str, Dict[str, int]]:
 
 def create_example_inputs() -> List[Dict[str, Any]]:
     """
-    Create example inputs for testing.
+    Create example inputs for testing with generic modality names.
     
     Returns:
         List of example input dictionaries
@@ -449,8 +449,8 @@ def create_example_inputs() -> List[Dict[str, Any]]:
             "text": "Describe this scene.",
             "multimodal_data": {
                 "multimodal_embeddings": {
-                    "vision": [torch.randn(768), torch.randn(768)],
-                    "audio": [torch.randn(512)],
+                    "m1": [torch.randn(768), torch.randn(768)],  # e.g., visual embeddings
+                    "m2": [torch.randn(512)],                    # e.g., audio embeddings
                 }
             }
         },
@@ -458,16 +458,17 @@ def create_example_inputs() -> List[Dict[str, Any]]:
             "text": "What is happening in this image?",
             "multimodal_data": {
                 "multimodal_embeddings": {
-                    "vision": [torch.randn(768)],
+                    "m1": [torch.randn(768)],  # e.g., visual embeddings
                 }
             }
         },
         {
-            "text": "Analyze this code and audio.",
+            "text": "Analyze this multimodal content.",
             "multimodal_data": {
                 "multimodal_embeddings": {
-                    "code": [torch.randn(768)],
-                    "audio": [torch.randn(512), torch.randn(512)],
+                    "m1": [torch.randn(768)],                    # e.g., visual embeddings
+                    "m2": [torch.randn(512), torch.randn(512)], # e.g., audio embeddings
+                    "m4": [torch.randn(768)],                    # e.g., code embeddings
                 }
             }
         },
