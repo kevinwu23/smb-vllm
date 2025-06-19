@@ -9,14 +9,14 @@ import torch
 import torch.nn as nn
 from typing import Dict, List, Optional, Tuple, Union, Any
 import logging
-from transformers import (
+from transformers import (  # type: ignore
     AutoModelForCausalLM, 
     AutoTokenizer, 
     AutoConfig,
     PreTrainedModel,
     PretrainedConfig,
 )
-from transformers.modeling_outputs import CausalLMOutputWithPast
+from transformers.modeling_outputs import CausalLMOutputWithPast  # type: ignore
 
 from .projector import MultiModalProjector
 from .processor import MultimodalProcessor
@@ -185,7 +185,7 @@ class MultimodalQwen3Model(PreTrainedModel):
         inputs_embeds: torch.Tensor,
         multimodal_embeddings: Dict[str, List[torch.Tensor]],
         attention_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """
         Merge multimodal embeddings with text embeddings.
         
@@ -296,7 +296,7 @@ class MultimodalQwen3Model(PreTrainedModel):
             inputs_embeds = self.get_input_embeddings()(input_ids)
         
         # Merge multimodal embeddings
-        if multimodal_embeddings is not None and past_key_values is None:
+        if multimodal_embeddings is not None and past_key_values is None and input_ids is not None:
             # Only merge multimodal embeddings on the first forward pass
             inputs_embeds, attention_mask = self._merge_multimodal_embeddings(
                 input_ids, inputs_embeds, multimodal_embeddings, attention_mask

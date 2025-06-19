@@ -11,7 +11,7 @@ import logging
 from PIL import Image
 import requests
 from io import BytesIO
-from transformers import CLIPProcessor, CLIPModel
+from transformers import CLIPProcessor, CLIPModel  # type: ignore
 from multimodal_qwen3 import MultimodalQwen3Pipeline
 
 # Set up logging
