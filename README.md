@@ -50,7 +50,7 @@ The model combines these inputs into a single hidden representation before gener
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/kevinwu23/smb-vllm
 cd smb-vllm
 
 # Install in development mode
