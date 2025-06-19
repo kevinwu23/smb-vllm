@@ -29,19 +29,17 @@ def load_clip_model():
 
 
 def load_sample_image():
-    """Load a sample image from the internet."""
-    # Use a sample image from the COCO dataset
-    image_url = "https://farm4.staticflickr.com/3175/2653711032_804ff86d81_z.jpg"
+    """Load the local image.jpeg file."""
+    image_path = "examples/image.jpeg"
     
     try:
-        logger.info(f"Loading image from: {image_url}")
-        response = requests.get(image_url)
-        response.raise_for_status()
-        image = Image.open(BytesIO(response.content)).convert('RGB')
+        logger.info(f"Loading local image from: {image_path}")
+        image = Image.open(image_path).convert('RGB')
         logger.info(f"Image loaded successfully. Size: {image.size}")
         return image
     except Exception as e:
-        logger.error(f"Failed to load image: {e}")
+        logger.error(f"Failed to load image from {image_path}: {e}")
+        logger.info("Please make sure image.jpeg exists in the examples/ directory")
         # Fallback: create a simple synthetic image
         logger.info("Creating fallback synthetic image...")
         image = Image.new('RGB', (224, 224), color=(0, 0, 255))  # Blue color
@@ -91,13 +89,13 @@ def main():
         device="cuda" if torch.cuda.is_available() else "cpu",
     )
     
-    # Test different prompts with the real image embeddings
+    # Test with the specific dog counting question
     test_cases = [
+        "How many dogs are in this image?",
         "Describe what you see in this image.",
         "What is the main subject of this image?",
-        "What colors are prominent in this scene?",
-        "What kind of environment or setting is shown?",
-        "Generate a creative caption for this image.",
+        "Are there any animals in this image?",
+        "What kind of scene is shown?",
     ]
     
     logger.info("\n" + "="*60)
