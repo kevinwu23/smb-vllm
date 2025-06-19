@@ -10,25 +10,6 @@ The implementation provides a custom model class that can process:
 
 The model combines these inputs into a single hidden representation before generation, enabling text generation conditioned on multiple modalities.
 
-## Architecture
-
-### 1. Custom Model Class (`MultimodalQwen3Model`)
-- Extends Qwen3 to support multimodal inputs
-- Handles variable-length embedding sequences
-- Integrates multimodal data through projection layers
-- Maintains compatibility with vLLM's generation pipeline
-
-### 2. Multimodal Embedding Projection (`MultiModalProjector`)
-- **MLP Connector**: 2-layer MLP with configurable activation functions
-- **Dimension Alignment**: Projects multimodal embeddings to text embedding dimension
-- **Modality-Specific**: Separate projectors for each modality type
-- **Flexible Configuration**: Supports different input dimensions per modality
-
-### 3. KV Cache Optimization
-- Efficient handling of variable-length multimodal sequences
-- Proper attention masking for fused embeddings
-- Memory-optimized processing for batched multimodal inputs
-
 ## Design Choices
 
 ### Early Fusion Strategy
@@ -179,14 +160,6 @@ multimodal-llm-extension/
 ├── setup.py                     # Package setup
 └── README.md                    # This file
 ```
-
-## Key Features
-
-- **Flexible Modality Support**: Handle arbitrary embedding types and dimensions
-- **Efficient Processing**: Optimized for variable-length sequences
-- **Easy Integration**: Simple pipeline interface for quick usage
-- **Extensible Design**: Easy to add new modalities or modify existing ones
-- **Memory Optimized**: Efficient handling of large multimodal inputs
 
 ## Requirements
 
